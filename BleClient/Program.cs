@@ -16,7 +16,8 @@ sealed class BleShell(CancellationTokenSource cts)
     private readonly TaskCompletionSource<bool> _btTcs = new();
 
     // Scan state
-    private readonly List<CBPeripheral> _scanResults = new();
+    private readonly List<CBPeripheral>          _scanResults     = new();
+    private readonly Dictionary<string, string>  _scanResultNames = new(); // identifier → best display name
     private string?                               _activeScanTarget;
     private TaskCompletionSource<CBPeripheral>?   _activeScanTcs;
 
@@ -95,6 +96,7 @@ sealed class BleShell(CancellationTokenSource cts)
         if (_connected) { Console.WriteLine("Disconnect first."); return; }
 
         _scanResults.Clear();
+        _scanResultNames.Clear();
         _activeScanTcs  = null;
         _activeScanTarget = null;
 
@@ -117,8 +119,9 @@ sealed class BleShell(CancellationTokenSource cts)
         Console.WriteLine($"\nFound {_scanResults.Count} device(s):");
         for (int i = 0; i < _scanResults.Count; i++)
         {
-            var p = _scanResults[i];
-            Console.WriteLine($"  [{i + 1}]  {p.Name ?? "<unnamed>"}   ({p.Identifier})");
+            var p    = _scanResults[i];
+            var name = _scanResultNames.TryGetValue(p.Identifier.ToString(), out var n) ? n : "<unnamed>";
+            Console.WriteLine($"  [{i + 1}]  {name}   ({p.Identifier})");
         }
         Console.WriteLine();
     }
@@ -226,13 +229,23 @@ sealed class BleShell(CancellationTokenSource cts)
     internal void BtReady() => _btTcs.TrySetResult(true);
     internal void BtFailed(string msg) => _btTcs.TrySetException(new Exception(msg));
 
-    internal void OnPeripheralDiscovered(CBPeripheral p)
+    internal void OnPeripheralDiscovered(CBPeripheral p, string? advName)
     {
-        if (_activeScanTcs is not null && p.Name == _activeScanTarget)
+        var bestName = p.Name ?? advName;
+        var id       = p.Identifier.ToString();
+
+        if (_activeScanTcs is not null && bestName == _activeScanTarget)
         { _activeScanTcs.TrySetResult(p); return; }
 
-        if (!_scanResults.Any(x => x.Identifier.ToString() == p.Identifier.ToString()))
+        if (!_scanResults.Any(x => x.Identifier.ToString() == id))
+        {
             _scanResults.Add(p);
+            if (bestName is not null) _scanResultNames[id] = bestName;
+        }
+        else if (bestName is not null)
+        {
+            _scanResultNames[id] = bestName; // update if a better name arrives later
+        }
     }
 
     internal void OnConnected()      => _activeConTcs?.TrySetResult(true);
@@ -275,7 +288,10 @@ sealed class BleShell(CancellationTokenSource cts)
 
         public override void DiscoveredPeripheral(CBCentralManager central, CBPeripheral peripheral,
             NSDictionary advertisementData, NSNumber rssi)
-            => s.OnPeripheralDiscovered(peripheral);
+        {
+            var advName = (advertisementData?[CBAdvertisement.DataLocalNameKey] as NSString)?.ToString();
+            s.OnPeripheralDiscovered(peripheral, advName);
+        }
 
         public override void ConnectedPeripheral(CBCentralManager central, CBPeripheral peripheral)
             => s.OnConnected();

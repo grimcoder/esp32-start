@@ -2,7 +2,17 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <NimBLEDevice.h>
+#include <AccelStepper.h>
 #include "secrets.h"
+
+// ── Stepper motor (MKS APT / A4988 / DRV8825 etc.) ──────────────────────────
+#define MOTOR_STEP_PIN  18
+#define MOTOR_DIR_PIN   19
+#define MOTOR_EN_PIN    21
+
+// Pointer — AccelStepper is constructed in setup() after Arduino hardware init.
+// A global object calls enableOutputs()/pinMode() before hardware is ready.
+AccelStepper* stepper = nullptr;
 
 // Nordic UART Service UUIDs
 #define BLE_SERVICE_UUID  "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -13,6 +23,7 @@ bool wifiEnabled = false;
 bool bleEnabled = false;
 bool webEnabled = false;
 bool bleClientConnected = false;
+bool motorEnabled = false;
 
 WebServer server(80);
 NimBLECharacteristic* pTxCharacteristic = nullptr;
@@ -215,6 +226,12 @@ void printStatus() {
     Serial.println("ON → http://" + WiFi.localIP().toString());
   else
     Serial.println("OFF");
+  Serial.print("Motor: pos=");
+  Serial.print(stepper ? stepper->currentPosition() : 0);
+  Serial.print(" target=");
+  Serial.print(stepper ? stepper->targetPosition() : 0);
+  Serial.print(" running=");
+  Serial.println((stepper && stepper->isRunning()) ? "YES" : "NO");
   Serial.println("--------------------");
 }
 
@@ -252,7 +269,68 @@ void processCommand(const String& cmd) {
     printStatus();
     response = "WiFi:" + String(wifiEnabled ? WiFi.localIP().toString() : "OFF")
              + " BLE:" + (bleEnabled ? "ON" : "OFF")
-             + " Web:" + (webEnabled ? "ON" : "OFF");
+             + " Web:" + (webEnabled ? "ON" : "OFF")
+             + " Motor:pos=" + String(stepper ? stepper->currentPosition() : 0);
+  }
+  // ── Motor commands ──────────────────────────────────────────────────────────
+  else if (cmd.startsWith("motor move ")) {
+    long steps = cmd.substring(11).toInt();
+    if (stepper) stepper->moveTo(steps);
+    response = "Moving to " + String(steps) + " steps";
+    Serial.println(response);
+  }
+  else if (cmd.startsWith("motor step ")) {
+    long delta = cmd.substring(11).toInt();
+    if (stepper) stepper->move(delta);
+    response = "Moving " + String(delta) + " steps relative";
+    Serial.println(response);
+  }
+  else if (cmd == "motor stop") {
+    if (stepper) stepper->stop();
+    response = "Motor stopped at " + String(stepper ? stepper->currentPosition() : 0);
+    Serial.println(response);
+  }
+  else if (cmd == "motor home") {
+    if (stepper) stepper->moveTo(0);
+    response = "Homing to 0";
+    Serial.println(response);
+  }
+  else if (cmd == "motor zero") {
+    if (stepper) stepper->setCurrentPosition(0);
+    response = "Position zeroed";
+    Serial.println(response);
+  }
+  else if (cmd.startsWith("motor speed ")) {
+    float spd = cmd.substring(12).toFloat();
+    if (stepper) stepper->setMaxSpeed(spd);
+    response = "Max speed set to " + String(spd);
+    Serial.println(response);
+  }
+  else if (cmd.startsWith("motor accel ")) {
+    float acc = cmd.substring(12).toFloat();
+    if (stepper) stepper->setAcceleration(acc);
+    response = "Acceleration set to " + String(acc);
+    Serial.println(response);
+  }
+  else if (cmd == "motor enable") {
+    digitalWrite(MOTOR_EN_PIN, LOW);
+    motorEnabled = true;
+    response = "Motor enabled";
+    Serial.println(response);
+  }
+  else if (cmd == "motor disable") {
+    if (stepper) stepper->stop();
+    digitalWrite(MOTOR_EN_PIN, HIGH);
+    motorEnabled = false;
+    response = "Motor disabled";
+    Serial.println(response);
+  }
+  else if (cmd == "motor status") {
+    response = "pos=" + String(stepper ? stepper->currentPosition() : 0)
+             + " target=" + String(stepper ? stepper->targetPosition() : 0)
+             + " running=" + String((stepper && stepper->isRunning()) ? "YES" : "NO")
+             + " enabled=" + String(motorEnabled ? "YES" : "NO");
+    Serial.println(response);
   }
   else if (cmd == "restart") {
     bleSend("Restarting...");
@@ -284,6 +362,27 @@ void setup() {
   Serial.println("  web off     → Stop web server");
   Serial.println("  status      → Show current status");
   Serial.println("  restart     → Restart ESP32");
+  Serial.println("  motor move <steps>   → Move to absolute step position");
+  Serial.println("  motor step <delta>   → Move relative steps (+/-)");
+  Serial.println("  motor stop           → Stop motor");
+  Serial.println("  motor home           → Return to position 0");
+  Serial.println("  motor zero           → Set current position as 0");
+  Serial.println("  motor speed <pps>    → Set max speed (steps/sec)");
+  Serial.println("  motor accel <pps2>   → Set acceleration");
+  Serial.println("  motor enable/disable → Enable/disable driver");
+  Serial.println("  motor status         → Motor position and state");
+
+  // ── Motor init ──────────────────────────────────────────────────────────────
+  // Construct on the heap here, after Arduino hardware is fully initialised.
+  stepper = new AccelStepper(AccelStepper::DRIVER, MOTOR_STEP_PIN, MOTOR_DIR_PIN, 0, 0, false);
+  pinMode(MOTOR_EN_PIN, OUTPUT);
+  digitalWrite(MOTOR_EN_PIN, LOW);   // Active LOW — enable by default
+  motorEnabled = true;
+  stepper->enableOutputs();          // Set STEP/DIR pins as OUTPUT (safe here)
+  stepper->setMaxSpeed(1000);
+  stepper->setAcceleration(600);
+  Serial.println("Motor ready (step=" + String(MOTOR_STEP_PIN) + ", dir=" + String(MOTOR_DIR_PIN) + ", en=" + String(MOTOR_EN_PIN) + ")");
+  Serial.flush();
 
   startBLE();
   
@@ -304,4 +403,6 @@ void loop() {
   if (webEnabled) {
     server.handleClient();
   }
+
+  if (stepper) stepper->run();   // Must be called as often as possible
 }

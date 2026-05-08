@@ -1,6 +1,80 @@
 # ESP32 Start
 
-ESP32 firmware with WiFi, BLE (Nordic UART Service), and a simple web server — all controllable via serial or BLE commands.
+ESP32 firmware with WiFi, BLE (Nordic UART Service), and a simple web server — all controllable via serial, BLE, or a macOS .NET client app.
+
+---
+
+## Prerequisites
+
+| Tool | Notes |
+|------|-------|
+| [PlatformIO](https://platformio.org/install) | VS Code extension or CLI |
+| [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9) | For the macOS BleClient app |
+| macOS 15+ | Required for `BleClient` (CoreBluetooth) |
+| ESP32 dev board | Connected via USB |
+
+---
+
+## Quick Start
+
+### 1 — WiFi credentials
+
+```bash
+cp include/secrets.h.example include/secrets.h
+# Edit include/secrets.h — set WIFI_SSID and WIFI_PASSWORD
+```
+
+`include/secrets.h` is gitignored and will never be committed.
+
+### 2 — Build and flash firmware
+
+```bash
+# From the project root
+pio run --target upload
+
+# Open serial monitor (115200 baud)
+pio device monitor
+```
+
+The ESP32 boots with BLE enabled and advertises as **`XXXX-ESP32-BLE`**.
+
+### 3 — Run the macOS BleClient
+
+```bash
+cd BleClient
+./run.sh          # builds and launches the interactive shell
+```
+
+Or build once and run directly:
+
+```bash
+cd BleClient
+dotnet build
+./bin/Debug/net9.0-macos15.0/osx-arm64/BleClient.app/Contents/MacOS/BleClient
+```
+
+#### BleClient shell commands
+
+```
+scan [seconds]        Scan for nearby BLE devices (default 5 s)
+connect [name|index]  Connect by device name or scan result index
+disconnect            Disconnect from current device
+help                  Show help
+exit                  Quit
+```
+
+Once connected, any other input is forwarded to the ESP32:
+
+```
+> connect XXXX-ESP32-BLE
+Connected.
+
+[XXXX-ESP32-BLE] > status
+[XXXX-ESP32-BLE] WiFi:192.168.1.42 BLE:ON Web:ON
+
+[XXXX-ESP32-BLE] > wifi off
+[XXXX-ESP32-BLE] WiFi OFF
+```
 
 ---
 

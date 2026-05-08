@@ -131,8 +131,12 @@ sealed class BleShell(CancellationTokenSource cts)
         CBPeripheral? target = null;
 
         // Connect by scan result index
-        if (int.TryParse(nameOrIndex, out var idx) && idx >= 1 && idx <= _scanResults.Count)
+        if (int.TryParse(nameOrIndex, out var idx))
         {
+            if (_scanResults.Count == 0)
+            { Console.WriteLine("No scan results. Run 'scan' first."); return; }
+            if (idx < 1 || idx > _scanResults.Count)
+            { Console.WriteLine($"Invalid index. Choose 1–{_scanResults.Count}."); return; }
             target = _scanResults[idx - 1];
         }
         else
@@ -160,7 +164,8 @@ sealed class BleShell(CancellationTokenSource cts)
         }
 
         // Connect
-        Console.WriteLine($"Connecting to '{target.Name}'...");
+        var displayName = string.IsNullOrEmpty(target.Name) ? "<unnamed>" : target.Name;
+        Console.WriteLine($"Connecting to '{displayName}'...");
         _peripheral    = target;
         _activeConTcs  = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 

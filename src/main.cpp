@@ -1,19 +1,30 @@
 #include <Arduino.h>
-
-#define LED 2   // Built-in LED on most ESP32 boards
+#include <WiFi.h>
+#include <NimBLEDevice.h>
+#include "secrets.h"
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LED, OUTPUT);
-  Serial.println("ESP32 Ready!");
+
+  // === WiFi ===
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected!");
+
+  // === BLE ===
+  NimBLEDevice::init("TARAS-ESP32");
+  NimBLEServer* pServer = NimBLEDevice::createServer();
+  // ... add services/characteristics as needed
+  NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->start();
+
+  Serial.println("Both WiFi + BLE are running!");
 }
 
 void loop() {
-  // digitalWrite(LED, HIGH);
-  // Serial.println("LED ON");
-  // delay(1000);
-  
-  // digitalWrite(LED, LOW);
-  // Serial.println("LED OFF");
-  // delay(1000);
+  delay(5000);
 }

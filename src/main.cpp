@@ -183,11 +183,20 @@ void startBLE() {
   );
   pRxCharacteristic->setCallbacks(new BLERxCb());
 
-  pService->start();
+  // NimBLE v2.x: pService->start() is a no-op; start the GATT server explicitly.
+  if (!pServer->start()) {
+    Serial.println("❌ GATT server start failed");
+    return;
+  }
 
   NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->setName("XXXX-ESP32-BLE");
   pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
-  pAdvertising->start();
+
+  if (!pAdvertising->start()) {
+    Serial.println("❌ BLE advertising start failed");
+    return;
+  }
 
   bleEnabled = true;
   Serial.println("✅ BLE advertising started (NUS service ready)");

@@ -152,7 +152,10 @@ sealed class BleShell(CancellationTokenSource cts)
             _activeScanTarget = name;
             _activeScanTcs    = found;
 
-            _central.ScanForPeripherals(new[] { CBUUID.FromString(Constants.NusServiceUuid) });
+            // Scan without a service UUID filter: NimBLE puts 128-bit UUIDs in
+            // scan response, not the primary ad PDU, so CoreBluetooth's UUID
+            // filter misses the device. Match by name instead.
+            _central.ScanForPeripherals(Array.Empty<CBUUID>());
 
             using var scanCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
             scanCts.CancelAfter(TimeSpan.FromSeconds(Constants.ScanTimeoutSeconds));
@@ -222,7 +225,16 @@ sealed class BleShell(CancellationTokenSource cts)
           exit                  Quit
 
         When connected, any other input is forwarded to the device:
-          wifi on/off   ble on/off   web on/off   status   restart
+          wifi on/off              ble on/off   web on/off   status   restart
+          motor move <steps>       Move to absolute step position
+          motor step <delta>       Move relative steps (+/-)
+          motor stop               Stop motor immediately
+          motor home               Return to position 0
+          motor zero               Set current position as 0
+          motor speed <steps/sec>  Set max speed
+          motor accel <steps/sec²> Set acceleration
+          motor enable/disable     Enable or disable driver
+          motor status             Show position and state
         """);
 
     // ── Delegate callbacks ────────────────────────────────────────────────────
